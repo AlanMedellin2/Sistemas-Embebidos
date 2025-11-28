@@ -31,7 +31,7 @@
 #include "stdint.h"
 #include "VozAnalisis.h"
 
-
+/*
 #define ADC_VREF 3.3f
 #define FS 16000.0f
 #define FRAME 512
@@ -41,7 +41,7 @@
 #define PI 3.14159f
 
 #define MUESTRAS 10
-#define FRAMES 122
+#define FRAMES 122*/
 
 /* USER CODE END Includes */
 
@@ -84,8 +84,8 @@ float rolloffPerf[FRAMES];
 
 //ADC 16-bit
 
-const int16_t mic[32000] = {0};   // DMA
-bool adcReady=false;
+volatile int16_t mic[32000] = {0};   // DMA
+volatile bool adcReady=false;
 uint8_t start=0,cont=0;
 
 
@@ -113,7 +113,6 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 TIM_HandleTypeDef htim6;
-TIM_HandleTypeDef htim7;
 
 UART_HandleTypeDef huart3;
 
@@ -128,7 +127,6 @@ static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_TIM7_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -206,7 +204,6 @@ Error_Handler();
   MX_ADC1_Init();
   MX_TIM6_Init();
   MX_USART3_UART_Init();
-  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -238,20 +235,23 @@ Error_Handler();
 			  if(cont<10 && start==1){
 
 				 HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 1);
-
 				 adcReady=false;
-
 				 HAL_TIM_Base_Start(&htim6);
 				 HAL_ADC_Start_DMA(&hadc1, (uint32_t*)mic, 32000);
 				 start=0;
 
 			  }
 
-			  if(adcReady){
+			  if(adcReady && cont<10){
+
 				 HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 0);
-				 adcReady=false;
 				 procesar(mic,32000, zcrPersona[cont],centroidPersona[cont], bwPersona[cont], rolloffPersona[cont]);
 				 cont++;
+				 adcReady=false;
+			  }
+
+			  if(cont >=10){
+				  devState=MEAN;
 			  }
 
 
@@ -411,7 +411,6 @@ static void MX_ADC1_Init(void)
   /** Configure the ADC multi-mode
   */
   multimode.Mode = ADC_MODE_INDEPENDENT;
-
   if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
   {
     Error_Handler();
@@ -471,44 +470,6 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
-
-}
-
-/**
-  * @brief TIM7 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM7_Init(void)
-{
-
-  /* USER CODE BEGIN TIM7_Init 0 */
-
-  /* USER CODE END TIM7_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM7_Init 1 */
-
-  /* USER CODE END TIM7_Init 1 */
-  htim7.Instance = TIM7;
-  htim7.Init.Prescaler = 1999;
-  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim7.Init.Period = 44999;
-  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM7_Init 2 */
-
-  /* USER CODE END TIM7_Init 2 */
 
 }
 
@@ -688,10 +649,10 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 void promedio(float input[][FRAMES], float *resultado){
 	for(int i=0;i<FRAMES;i++){
 		float suma=0.0f;
-		for(int j=0;j<10;j++){
+		for(int j=0;j<FRAMES;j++){
 			suma+=input[j][i];
 		}
-		resultado[i]=suma/10.0;
+		resultado[i]=suma/FRAMES;
 	}
 }
 
