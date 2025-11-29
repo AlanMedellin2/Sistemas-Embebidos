@@ -218,6 +218,7 @@ Error_Handler();
 	  		  HAL_GPIO_WritePin(LED_ROJO_GPIO_Port, LED_ROJO_Pin, 0);
 	  		  HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 0);
 	  		  HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 1);
+	  		  iniciar();
 
 	  		  cont=0;
 	  		  start=0;
@@ -230,8 +231,6 @@ Error_Handler();
 	  		  HAL_GPIO_WritePin(LED_ROJO_GPIO_Port, LED_ROJO_Pin, 1);
 			  HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 0);
 			  HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 0);
-
-			  iniciar();
 
 
 			  if(cont<10 && start==1){
