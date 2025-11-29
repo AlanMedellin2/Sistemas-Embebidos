@@ -30,26 +30,7 @@
 #include <string.h>
 #include "stdint.h"
 #include "VozAnalisis.h"
-#define ADC_VREF 3.3f
-#define FS      16000.0f
-#define FRAME   512
-#define HOP     (FRAME/2)
-#define LEN_SIGNAL 32000
-#define MAX_FRAMES ((LEN_SIGNAL - FRAME) / HOP + 2)
-#define PI 3.14159f
 
-/* Estado FFT */
-static arm_rfft_fast_instance_f32 fft_inst;
-extern UART_HandleTypeDef huart3;
-/* Buffers */
-static float hann[FRAME];
-static float frecuenciaBin[FRAME/2];
-char buffer[64]; // Ajusta el tamaño según necesites
-//char buffer[64]; // Ajusta el tamaño según necesites
-
-static float spectrum[FRAME];
-static float frame_buff[FRAME];
-static float mag[FRAME/2];
 /*
 #define ADC_VREF 3.3f
 #define FS 16000.0f
@@ -103,6 +84,17 @@ float bwPerf[FRAMES];
 float rolloffPerf[FRAMES];*/
 
 static float frame_buff[FRAME];
+
+/* Buffers */
+
+static arm_rfft_fast_instance_f32 fft_inst;
+
+static float hann[FRAME];
+static float frecuenciaBin[FRAME/2];
+
+static float spectrum[FRAME];
+static float frame_buff[FRAME];
+static float mag[FRAME/2];
 
 //ADC 16-bit
 
@@ -631,23 +623,16 @@ void mandarDatos(int16_t *array, int length)
             frame_buff[j] = frame_buff[j] / maxAbs; // ahora en [-1, 1]
         }
 
-        /* ---- 4. ENVÍO SERIAL COMO FLOAT ----
-        char buffer[32];
-        for (int j = 0; j < FRAME; j++) {
-            int len = snprintf(buffer, sizeof(buffer), "%.4f\r\n", frame_buff[j]);
-            HAL_UART_Transmit(&huart3, (uint8_t*)buffer, len, HAL_MAX_DELAY);
-        }*/
-
         arm_rfft_fast_init_f32(&fft_inst, FRAME);
 
 
-        //Ventana Hanning
-        for (int i = 0; i < FRAME; i++) {
+		//Ventana Hanning
+		for (int i = 0; i < FRAME; i++) {
 			hann[i] = 0.5f - 0.5f * cosf((2.0f * PI * i) / (FRAME - 1));
 		}
 
-        //Frecuencia bin
-        for (int i = 0; i < FRAME/2; i++) {
+		//Frecuencia bin
+		for (int i = 0; i < FRAME/2; i++) {
 			frecuenciaBin[i] = (float)i * FS / (float)FRAME;
 		}
 
@@ -661,16 +646,16 @@ void mandarDatos(int16_t *array, int length)
 		/* ---- 7. MAGNITUD ---- */
 		arm_cmplx_mag_f32(spectrum, mag, FRAME/2);
 
-		for(int i = 0; i < FRAME/2; i++) {
-			// Convertir cada float a string
-			uint8_t len = snprintf(buffer, sizeof(buffer), "%.6f\r\n", mag[i]);
-			HAL_UART_Transmit(&huart3, (uint8_t*)buffer, len, HAL_MAX_DELAY);
-		}
-		HAL_UART_Transmit(&huart3, (uint8_t*)"FRAME_END\r\n", 11, HAL_MAX_DELAY);
+        /* ---- 4. ENVÍO SERIAL COMO FLOAT ---- */
+        char buffer[32];
+        for (int j = 0; j < FRAME/2; j++) {
+            int len = snprintf(buffer, sizeof(buffer), "%.6f\r\n", mag[j]);
+            HAL_UART_Transmit(&huart3, (uint8_t*)buffer, len, HAL_MAX_DELAY);
+        }
+        HAL_UART_Transmit(&huart3, (uint8_t*)"FRAME_END\r\n", 12, HAL_MAX_DELAY);
         HAL_Delay(5);
     }
 }
-
 
 /*
 void promedio(float input[][FRAMES], float *resultado){
