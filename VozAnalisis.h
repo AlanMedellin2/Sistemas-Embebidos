@@ -11,7 +11,18 @@
 
 #include <stdint.h>
 
-int procesar(const int16_t *array, int length,
+#define ADC_VREF 3.3f
+#define FS 16000.0f
+#define FRAME 512
+#define HOP (FRAME/2) //256
+#define LEN_SIGNAL 32000
+#define MAX_FRAMES ((LEN_SIGNAL-FRAME)/HOP+2) //122
+#define PI 3.14159f
+
+#define MUESTRAS 10
+#define FRAMES 122
+
+int procesar(volatile int16_t *array, int length,
              float *zcrBuff,
              float *centroidBuff,
              float *bandwithBuff,
