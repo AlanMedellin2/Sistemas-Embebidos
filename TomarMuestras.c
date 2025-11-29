@@ -84,10 +84,22 @@ float perfilPersona[4];
 
 //ADC 16-bit
 
-volatile int16_t mic[32000] = {0};   // DMA
+volatile uint16_t adc_buf[32000] = {0};   // DMA
+float mic_f[32000]; // DMA pero en float
 volatile bool adcReady=false;
 uint8_t start=0,cont=0;
 
+//Filtro
+
+float array_filtrado[32000];
+float sosCoeffs[20] = {
+     1.0000f, -2.0000f,  1.0000f, 0.5529f,  -0.1248f,
+     1.0000f,  2.0001f,  1.0001f, 0.6072f,  -0.5296f,
+     1.0000f,  1.9999f,  0.9999f, 1.8065f,  -0.8179f,
+     1.0000f, -2.0000f,  1.0000f, 1.9257f,  -0.9354f
+};
+float sosState[4*4];
+float gain = 0.0288f;
 
 /* DUAL_CORE_BOOT_SYNC_SEQUENCE: Define for dual core boot synchronization    */
 /*                             demonstration code based on hardware semaphore */
@@ -133,6 +145,8 @@ static void MX_USART3_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+arm_biquad_cascade_df2T_instance_f32 S;
+// 2. Inicializar filtro
 
 /* USER CODE END 0 */
 
@@ -205,7 +219,12 @@ Error_Handler();
   MX_TIM6_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  arm_biquad_cascade_df1_init_f32(
+  	&S,
+  	4,            // número de secciones SOS
+  	sosCoeffs,
+  	sosState
+  );
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -218,6 +237,7 @@ Error_Handler();
 	  		  HAL_GPIO_WritePin(LED_ROJO_GPIO_Port, LED_ROJO_Pin, 0);
 	  		  HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 0);
 	  		  HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 1);
+
 	  		  iniciar();
 
 	  		  cont=0;
@@ -227,6 +247,7 @@ Error_Handler();
 				break;
 
 	  	  case MEASURE:
+	  		  start=1;
 
 	  		  HAL_GPIO_WritePin(LED_ROJO_GPIO_Port, LED_ROJO_Pin, 1);
 			  HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 0);
@@ -237,16 +258,31 @@ Error_Handler();
 
 				 HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 1);
 				 adcReady=false;
+				 HAL_ADC_Stop_DMA(&hadc1);
+				 memset((void*)adc_buf, 0, sizeof(adc_buf));
 				 HAL_TIM_Base_Start(&htim6);
-				 HAL_ADC_Start_DMA(&hadc1, (uint32_t*)mic, 32000);
+				 HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 1);
+				 HAL_Delay(1000);
+				 HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 0);
+				 HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 1);
+				 HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buf, 32000);
 				 start=0;
+				 HAL_Delay(5000);
+				 HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 1);
+				 HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 0);
 
 			  }
 
 			  if(adcReady && cont<10){
-
+				 HAL_TIM_Base_Stop(&htim6);
 				 HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 0);
-				 procesar(mic,32000, &zcrPersona,&centroidPersona, &bwPersona, &rolloffPersona);
+				 for (int k = 0; k < LEN_SIGNAL; k++) {
+					 // si quieres convertir a signed: mic_f[k] = (float)((int16_t)adc_buf[k]);
+					 mic_f[k] = (float)adc_buf[k];
+				 }
+				 // Filtro
+				 Filtro_pasaBandas(mic_f, array_filtrado, 32000);
+				 procesar(array_filtrado,32000, &zcrPersona,&centroidPersona, &bwPersona, &rolloffPersona);
 
 				 zcrPerfil[cont]=zcrPersona;
 				 centroidPerfil[cont]=centroidPersona;
@@ -290,19 +326,16 @@ Error_Handler();
 			  HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 0);
 
 
-			  if (adcReady)
-			  {
-			      adcReady = 0;
 
-			      // Enviar cada muestra como texto
-			      char buffer[20];
-			      for (int i = 0; i < 4; i++) {
-			          int len = sprintf(buffer, "%0.4f\r\n", perfilPersona[i]);
-			          HAL_UART_Transmit(&huart3, (uint8_t*)buffer, len, HAL_MAX_DELAY);
-			      }
-
-			      devState = IDLE;
+			  // Enviar cada muestra como texto
+			  char buffer[20];
+			  for (int i = 0; i < 4; i++) {
+				  int len = sprintf(buffer, "%0.4f\r\n", perfilPersona[i]);
+				  HAL_UART_Transmit(&huart3, (uint8_t*)buffer, len, HAL_MAX_DELAY);
 			  }
+
+			   devState = IDLE;
+
 
 	  		   break;
 
@@ -649,11 +682,25 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 
-	HAL_TIM_Base_Stop(&htim6);
-	HAL_ADC_Stop_DMA(&hadc1);
-
 	adcReady=true;
 
+}
+
+void Filtro_pasaBandas(volatile float *array, float *array_filtrado, int length){
+
+
+	// 3. Filtrar todo el arreglo
+	arm_biquad_cascade_df1_f32(&S, array, array_filtrado, length);
+
+	// 4. Aplicar ganancia final
+	for(int i = 0; i < length; i++)
+		array_filtrado[i] *= gain;
+
+	/*for(int i = 0; i < length; i++) {
+		// Convertir cada float a string
+		uint8_t len = snprintf(buffer, sizeof(buffer), "%.6f\r\n", output[i]);
+		HAL_UART_Transmit(&huart3, (uint8_t*)buffer, len, HAL_MAX_DELAY);
+	}*/
 }
 
 
