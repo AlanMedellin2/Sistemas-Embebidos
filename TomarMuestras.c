@@ -39,9 +39,9 @@
 #define LEN_SIGNAL 32000
 #define MAX_FRAMES ((LEN_SIGNAL-FRAME)/HOP+2) //122
 #define PI 3.14159f
-
+*/
 #define MUESTRAS 10
-#define FRAMES 122*/
+#define FRAMES 122
 
 /* USER CODE END Includes */
 
@@ -54,13 +54,6 @@ typedef enum{
 	UART
 }States;
 
-typedef struct{
-	float zcrPerfil[122];
-	float centroidPerfil[122];
-	float bwPerfil[122];
-	float rolloffPerfil[122];
-}modeloPersona;
-
 
 /* USER CODE END PTD */
 
@@ -71,16 +64,23 @@ volatile States devState = IDLE;
 //volatile modelo
 
 //Matrices
-float zcrPersona[MUESTRAS][FRAMES];
-float centroidPersona[MUESTRAS][FRAMES];
-float bwPersona[MUESTRAS][FRAMES];
-float rolloffPersona[MUESTRAS][FRAMES];
+float zcrPersona;
+float centroidPersona;
+float bwPersona;
+float rolloffPersona;
 
-//Arreglo final
-float zcrPerf[FRAMES];
-float centroidPerf[FRAMES];
-float bwPerf[FRAMES];
-float rolloffPerf[FRAMES];
+float zcrFinal;
+float centroidFinal;
+float bwFinal;
+float rolloffFinal;
+
+//Arreglo
+float zcrPerfil[MUESTRAS];
+float centroidPerfil[MUESTRAS];
+float bwPerfil[MUESTRAS];
+float rolloffPerfil[MUESTRAS];
+
+float perfilPersona[4];
 
 //ADC 16-bit
 
@@ -231,6 +231,8 @@ Error_Handler();
 			  HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 0);
 			  HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 0);
 
+			  iniciar();
+
 
 			  if(cont<10 && start==1){
 
@@ -245,7 +247,13 @@ Error_Handler();
 			  if(adcReady && cont<10){
 
 				 HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 0);
-				 procesar(mic,32000, zcrPersona[cont],centroidPersona[cont], bwPersona[cont], rolloffPersona[cont]);
+				 procesar(mic,32000, &zcrPersona,&centroidPersona, &bwPersona, &rolloffPersona);
+
+				 zcrPerfil[cont]=zcrPersona;
+				 centroidPerfil[cont]=centroidPersona;
+				 bwPerfil[cont]=bwPersona;
+				 rolloffPerfil[cont]=rolloffPersona;
+
 				 cont++;
 				 adcReady=false;
 			  }
@@ -260,10 +268,19 @@ Error_Handler();
 	  	  case MEAN:
 
 
-	  		 promedio(zcrPersona, zcrPerf);
-	  		 promedio(centroidPersona, centroidPerf);
-	  		 promedio(bwPersona, bwPerf);
-	  		 promedio(rolloffPersona, rolloffPerf);
+	  		 arm_mean_f32(zcrPerfil, MUESTRAS, &zcrFinal);
+	  		 arm_mean_f32(centroidPerfil,MUESTRAS,&centroidFinal);
+	  		 arm_mean_f32(bwPerfil,MUESTRAS,&bwFinal);
+	  		 arm_mean_f32(rolloffPerfil,MUESTRAS,&rolloffFinal);
+
+	  		 perfilPersona[0]=zcrFinal;
+	  		 perfilPersona[1]=centroidFinal;
+	  		 perfilPersona[2]=bwFinal;
+	  		 perfilPersona[3]=rolloffFinal;
+
+
+	  		 devState=UART;
+
 
 	  		  break;
 
@@ -272,25 +289,21 @@ Error_Handler();
 	  		  HAL_GPIO_WritePin(LED_ROJO_GPIO_Port, LED_ROJO_Pin, 0);
 			  HAL_GPIO_WritePin(LED_AMARILLO_GPIO_Port, LED_AMARILLO_Pin, 1);
 			  HAL_GPIO_WritePin(LED_VERDE_GPIO_Port, LED_VERDE_Pin, 0);
-			  /*
+
 
 			  if (adcReady)
 			  {
 			      adcReady = 0;
 
-			      // Enviar por UART
-			      char startMsg[] = "START\r\n";
-			      HAL_UART_Transmit(&huart3, (uint8_t*)startMsg, strlen(startMsg), HAL_MAX_DELAY);
-
 			      // Enviar cada muestra como texto
 			      char buffer[20];
-			      for (int i = 0; i < 32000; i++) {
-			          int len = sprintf(buffer, "%hu\r\n", mic[i]);
+			      for (int i = 0; i < 4; i++) {
+			          int len = sprintf(buffer, "%0.4f\r\n", perfilPersona[i]);
 			          HAL_UART_Transmit(&huart3, (uint8_t*)buffer, len, HAL_MAX_DELAY);
 			      }
 
 			      devState = IDLE;
-			  }*/
+			  }
 
 	  		   break;
 
@@ -621,15 +634,15 @@ static void MX_GPIO_Init(void)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	if(GPIO_Pin == USER_BTN_Pin){
 
-		if(devState == MEASURE && cont<10){
-			start=1;
+		if(devState==IDLE){
+			devState++;
 		}
 
-		if (devState == UART){ //Si ya llegó al ultimo estado, vuelve al estado 0 IDLE.
-			devState = IDLE;
+		if(devState == MEASURE && cont<10){
+			start=1;
 
-		} else {
-			devState++; //Aqui va cambiando el estado de manera secuencial,0, 1, 2, 3... 0, 1,...
+		}else {
+			devState=devState; //Aqui va cambiando el estado de manera secuencial,0, 1, 2, 3... 0, 1,...
 		}
 	}
 }
@@ -642,19 +655,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
 
 	adcReady=true;
 
-
 }
 
 
-void promedio(float input[][FRAMES], float *resultado){
-	for(int i=0;i<FRAMES;i++){
-		float suma=0.0f;
-		for(int j=0;j<FRAMES;j++){
-			suma+=input[j][i];
-		}
-		resultado[i]=suma/FRAMES;
-	}
-}
 
 /* USER CODE END 4 */
 
