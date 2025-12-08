@@ -1,0 +1,76 @@
+%% CONFIG SERIAL
+port = "COM3";
+baud = 115200;
+Fs = 16000; % si quieres analizar frecuencia
+FRAME = 512;
+TOTAL_FRAMES = 122;
+expectedSamples = FRAME * TOTAL_FRAMES;
+
+disp("Conectando puerto serial...");
+s = serialport(port, baud);
+configureTerminator(s, "CR/LF");
+
+flush(s);
+
+disp("Pon el STM32 en MEASURE y presiona ENTER para iniciar recepción...");
+pause;
+
+disp("Recibiendo datos...");
+tic;
+
+data = zeros(expectedSamples,1);
+idx = 1;
+
+for f = 1:TOTAL_FRAMES
+    fprintf("Frame %d/%d\n", f, TOTAL_FRAMES);
+    for j = 1:FRAME
+        line = readline(s);
+        val = str2double(line);
+        if isnan(val), val = 0; end
+        data(idx) = val;
+        idx = idx + 1;
+    end
+end
+
+tRead = toc;
+fprintf("Recepción completa en %.2f s\n", tRead);
+
+%% ----- ANÁLISIS DE LA SEÑAL -----
+
+fprintf("\n=== INFO DE SEÑAL RECIBIDA ===\n");
+fprintf("Muestras totales: %d\n", length(data));
+fprintf("Máximo: %.4f\n", max(data));
+fprintf("Mínimo: %.4f\n", min(data));
+fprintf("Rango: %.4f\n", max(data) - min(data));
+fprintf("RMS: %.4f\n", rms(data));
+fprintf("Media: %.4f\n", mean(data));
+
+if max(abs(data)) <= 1
+    disp("✓ Normalización dentro de -1 a 1");
+else
+    disp("⚠ Valores fuera del rango [-1,1]");
+end
+
+%% Graficar señal completa
+figure;
+plot(data);
+title("Señal recibida del STM32 (normalizada)");
+xlabel("Muestras");
+ylabel("Amplitud");
+grid on;
+
+%% Histograma de distribución
+figure;
+histogram(data, 100);
+title("Distribución de amplitudes");
+xlabel("Amplitud");
+ylabel("Frecuencia");
+grid on;
+
+%% Zoom a un fragmento (opcional)
+figure;
+plot(data(1:2048));
+title("Zoom en primeras 2048 muestras");
+xlabel("Muestras");
+ylabel("Amplitud");
+grid on;
